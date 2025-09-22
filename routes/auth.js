@@ -3,6 +3,14 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const router = express.Router();
 
+// Add this at the top of your routes/auth.js file:
+router.get('/test', (req, res) => {
+  res.json({ 
+    message: 'Auth routes are working!',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Register
 router.post('/register', async (req, res) => {
   try {
