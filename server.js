@@ -9,9 +9,12 @@ console.log('Port:', process.env.PORT || 5000);
 // Import database first - this initializes tables
 const db = require('./database');
 
-// Import models (they now just export functions, tables created in database.js)
-require('./models/User');
-require('./models/Event');
+// Wait a moment for database initialization before requiring models
+setTimeout(() => {
+  // Import models (they now just export functions, tables created in database.js)
+  require('./models/User');
+  require('./models/Event');
+}, 100);
 
 // CREATE APP FIRST
 const app = express();

@@ -1,17 +1,6 @@
 const db = require('../database');
 const bcrypt = require('bcryptjs');
 
-// Create users table
-db.run(`CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL,
-  profilePicture TEXT DEFAULT '',
-  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
-
 const User = {
   // Create a new user
   create: async (userData) => {

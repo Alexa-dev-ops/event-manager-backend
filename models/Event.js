@@ -1,30 +1,5 @@
 const db = require('../database');
 
-// Create events table
-db.run(`CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  startTime DATETIME NOT NULL,
-  endTime DATETIME NOT NULL,
-  location TEXT NOT NULL,
-  creatorId INTEGER NOT NULL,
-  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (creatorId) REFERENCES users (id) ON DELETE CASCADE
-)`);
-
-// Create event_attendees table
-db.run(`CREATE TABLE IF NOT EXISTS event_attendees (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  eventId INTEGER NOT NULL,
-  userId INTEGER NOT NULL,
-  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (eventId) REFERENCES events (id) ON DELETE CASCADE,
-  FOREIGN KEY (userId) REFERENCES users (id) ON DELETE CASCADE,
-  UNIQUE(eventId, userId)
-)`);
-
 const Event = {
   // Create a new event
   create: (eventData) => {
