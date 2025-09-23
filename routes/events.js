@@ -21,7 +21,7 @@ const auth = async (req, res, next) => {
 };
 
 // Configure email transporter (add to your environment variables)
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   service: 'gmail', // or your email service
   auth: {
     user: process.env.EMAIL_USER,
