@@ -13,12 +13,7 @@ const db = require('./database');
 require('./models/User');
 require('./models/Event');
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const eventRoutes = require('./routes/events');
-const userRoutes = require('./routes/users');
-   app.use('/api/users', userRoutes);
-
+// CREATE APP FIRST
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -34,7 +29,7 @@ app.use((req, res, next) => {
 
 // CORS middleware - Allow all origins for testing
 app.use(cors({
-  origin: '*', // Allow all origins for testing
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
@@ -53,6 +48,11 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Import routes AFTER app is created
+const authRoutes = require('./routes/auth');
+const eventRoutes = require('./routes/events');
+const userRoutes = require('./routes/users');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -125,7 +125,7 @@ app.use('*', (req, res) => {
 
 // Global error handler (must be last)
 app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', err);
+  console.error('Unhandled error:', err);
   console.error('Stack trace:', err.stack);
   
   res.status(err.status || 500).json({
@@ -159,11 +159,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('✅ Server started successfully!');
-  console.log(`🌐 Server running on port ${PORT}`);
-  console.log(`🔗 Available at: http://localhost:${PORT}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔗 Auth test: http://localhost:${PORT}/api/auth/test`);
-  console.log(`📱 Mobile test: http://localhost:${PORT}/test-connection`);
-  console.log('⏰ Startup time:', new Date().toISOString());
+  console.log('Server started successfully!');
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Available at: http://localhost:${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Auth test: http://localhost:${PORT}/api/auth/test`);
+  console.log(`Mobile test: http://localhost:${PORT}/test-connection`);
+  console.log('Startup time:', new Date().toISOString());
 });
