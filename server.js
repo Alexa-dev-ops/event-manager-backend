@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
-console.log('🚀 Starting Event Manager Backend...');
+console.log('Starting Event Manager Backend...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
 console.log('Port:', process.env.PORT || 5000);
 
@@ -17,6 +17,7 @@ require('./models/Event');
 const authRoutes = require('./routes/auth');
 const eventRoutes = require('./routes/events');
 const userRoutes = require('./routes/users');
+   app.use('/api/users', userRoutes);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
