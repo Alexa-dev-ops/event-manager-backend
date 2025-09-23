@@ -1,7 +1,7 @@
-// routes/events.js - ADD THIS TO YOUR BACKEND
+// routes/events.js
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../database');
+const db = require('../utils/db'); // ✅ Use promisified version
 const nodemailer = require('nodemailer');
 const router = express.Router();
 
@@ -20,9 +20,9 @@ const auth = async (req, res, next) => {
   }
 };
 
-// Configure email transporter (add to your environment variables)
+// Configure email transporter
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // or your email service
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -45,14 +45,8 @@ router.get('/', auth, async (req, res) => {
       ORDER BY e.date, e.time
     `;
     
-    db.all(sql, [req.userId, req.userId], (err, rows) => {
-      if (err) {
-        console.error('Get events error:', err);
-        res.status(500).json({ message: 'Server error', error: err.message });
-      } else {
-        res.json(rows || []);
-      }
-    });
+    const rows = await db.all(sql, [req.userId, req.userId]);
+    res.json(rows || []);
   } catch (error) {
     console.error('Get events error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -76,24 +70,16 @@ router.get('/:id', auth, async (req, res) => {
       WHERE ea.event_id = ?
     `;
     
-    db.get(eventSql, [req.params.id], (err, event) => {
-      if (err) {
-        return res.status(500).json({ message: 'Server error', error: err.message });
-      }
-      if (!event) {
-        return res.status(404).json({ message: 'Event not found' });
-      }
-      
-      db.all(attendeesSql, [req.params.id], (err, attendees) => {
-        if (err) {
-          return res.status(500).json({ message: 'Server error', error: err.message });
-        }
-        
-        res.json({
-          ...event,
-          attendees: attendees || []
-        });
-      });
+    const event = await db.get(eventSql, [req.params.id]);
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+    
+    const attendees = await db.all(attendeesSql, [req.params.id]);
+    
+    res.json({
+      ...event,
+      attendees: attendees || []
     });
   } catch (error) {
     console.error('Get event error:', error);
@@ -101,7 +87,7 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Create new event with attendees and send notifications
+// Create new event
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, date, time, location, attendeeIds } = req.body;
@@ -110,61 +96,34 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Title, date, time, and location are required' });
     }
     
-    // Insert event
-    const eventSql = `INSERT INTO events (title, description, date, time, location, organizer_id) 
-                      VALUES (?, ?, ?, ?, ?, ?)`;
+    const result = await db.run(
+      `INSERT INTO events (title, description, date, time, location, organizer_id) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [title, description, date, time, location, req.userId]
+    );
     
-    db.run(eventSql, [title, description, date, time, location, req.userId], function(err) {
-      if (err) {
-        console.error('Create event error:', err);
-        return res.status(500).json({ message: 'Server error', error: err.message });
+    const eventId = result.lastID;
+    
+    if (attendeeIds && Array.isArray(attendeeIds) && attendeeIds.length > 0) {
+      const attendeeSql = `INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)`;
+      for (const attendeeId of attendeeIds) {
+        await db.run(attendeeSql, [eventId, attendeeId]);
       }
       
-      const eventId = this.lastID;
-      
-      // Add attendees if provided
-      if (attendeeIds && Array.isArray(attendeeIds) && attendeeIds.length > 0) {
-        const attendeeSql = `INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)`;
-        
-        let completed = 0;
-        const errors = [];
-        
-        attendeeIds.forEach(attendeeId => {
-          db.run(attendeeSql, [eventId, attendeeId], (err) => {
-            completed++;
-            if (err) errors.push(err);
-            
-            if (completed === attendeeIds.length) {
-              // Send email notifications
-              sendEventNotifications(eventId, { title, description, date, time, location }, attendeeIds)
-                .catch(console.error);
-              
-              // Return response
-              res.status(201).json({
-                id: eventId,
-                title,
-                description,
-                date,
-                time,
-                location,
-                organizer_id: req.userId,
-                attendee_count: attendeeIds.length
-              });
-            }
-          });
-        });
-      } else {
-        res.status(201).json({
-          id: eventId,
-          title,
-          description,
-          date,
-          time,
-          location,
-          organizer_id: req.userId,
-          attendee_count: 0
-        });
-      }
+      // Send notifications (fire and forget)
+      sendEventNotifications(eventId, { title, description, date, time, location }, attendeeIds)
+        .catch(console.error);
+    }
+    
+    res.status(201).json({
+      id: eventId,
+      title,
+      description,
+      date,
+      time,
+      location,
+      organizer_id: req.userId,
+      attendee_count: attendeeIds?.length || 0
     });
   } catch (error) {
     console.error('Create event error:', error);
@@ -177,80 +136,37 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const { title, description, date, time, location, attendeeIds } = req.body;
     
-    // Check if user owns the event
-    db.get('SELECT * FROM events WHERE id = ? AND organizer_id = ?', 
-           [req.params.id, req.userId], (err, event) => {
-      if (err) {
-        return res.status(500).json({ message: 'Server error', error: err.message });
-      }
-      if (!event) {
-        return res.status(404).json({ message: 'Event not found or unauthorized' });
-      }
+    const event = await db.get('SELECT * FROM events WHERE id = ? AND organizer_id = ?', 
+                               [req.params.id, req.userId]);
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found or unauthorized' });
+    }
+    
+    await db.run(
+      `UPDATE events SET title = ?, description = ?, date = ?, time = ?, location = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [title, description, date, time, location, req.params.id]
+    );
+    
+    if (attendeeIds !== undefined) {
+      await db.run('DELETE FROM event_attendees WHERE event_id = ?', [req.params.id]);
       
-      // Update event
-      const updateSql = `UPDATE events SET title = ?, description = ?, date = ?, 
-                         time = ?, location = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`;
-      
-      db.run(updateSql, [title, description, date, time, location, req.params.id], (err) => {
-        if (err) {
-          return res.status(500).json({ message: 'Server error', error: err.message });
+      if (Array.isArray(attendeeIds) && attendeeIds.length > 0) {
+        const attendeeSql = `INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)`;
+        for (const attendeeId of attendeeIds) {
+          await db.run(attendeeSql, [req.params.id, attendeeId]);
         }
-        
-        // Update attendees if provided
-        if (attendeeIds !== undefined) {
-          // Remove existing attendees
-          db.run('DELETE FROM event_attendees WHERE event_id = ?', [req.params.id], (err) => {
-            if (err) {
-              return res.status(500).json({ message: 'Server error', error: err.message });
-            }
-            
-            // Add new attendees
-            if (attendeeIds && Array.isArray(attendeeIds) && attendeeIds.length > 0) {
-              const attendeeSql = `INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)`;
-              
-              let completed = 0;
-              attendeeIds.forEach(attendeeId => {
-                db.run(attendeeSql, [req.params.id, attendeeId], (err) => {
-                  completed++;
-                  if (completed === attendeeIds.length) {
-                    res.json({
-                      id: req.params.id,
-                      title,
-                      description,
-                      date,
-                      time,
-                      location,
-                      organizer_id: req.userId,
-                      attendee_count: attendeeIds.length
-                    });
-                  }
-                });
-              });
-            } else {
-              res.json({
-                id: req.params.id,
-                title,
-                description,
-                date,
-                time,
-                location,
-                organizer_id: req.userId,
-                attendee_count: 0
-              });
-            }
-          });
-        } else {
-          res.json({
-            id: req.params.id,
-            title,
-            description,
-            date,
-            time,
-            location,
-            organizer_id: req.userId
-          });
-        }
-      });
+      }
+    }
+    
+    res.json({
+      id: req.params.id,
+      title,
+      description,
+      date,
+      time,
+      location,
+      organizer_id: req.userId,
+      attendee_count: attendeeIds?.length || 0
     });
   } catch (error) {
     console.error('Update event error:', error);
@@ -261,24 +177,14 @@ router.put('/:id', auth, async (req, res) => {
 // Delete event
 router.delete('/:id', auth, async (req, res) => {
   try {
-    // Check if user owns the event
-    db.get('SELECT * FROM events WHERE id = ? AND organizer_id = ?', 
-           [req.params.id, req.userId], (err, event) => {
-      if (err) {
-        return res.status(500).json({ message: 'Server error', error: err.message });
-      }
-      if (!event) {
-        return res.status(404).json({ message: 'Event not found or unauthorized' });
-      }
-      
-      // Delete event (attendees will be deleted automatically due to CASCADE)
-      db.run('DELETE FROM events WHERE id = ?', [req.params.id], (err) => {
-        if (err) {
-          return res.status(500).json({ message: 'Server error', error: err.message });
-        }
-        res.json({ message: 'Event deleted successfully' });
-      });
-    });
+    const event = await db.get('SELECT * FROM events WHERE id = ? AND organizer_id = ?', 
+                               [req.params.id, req.userId]);
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found or unauthorized' });
+    }
+    
+    await db.run('DELETE FROM events WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Event deleted successfully' });
   } catch (error) {
     console.error('Delete event error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -293,41 +199,29 @@ async function sendEventNotifications(eventId, eventData, attendeeIds) {
       return;
     }
     
-    // Get attendee email addresses
     const placeholders = attendeeIds.map(() => '?').join(',');
     const sql = `SELECT email, name FROM users WHERE id IN (${placeholders})`;
+    const users = await db.all(sql, attendeeIds);
     
-    db.all(sql, attendeeIds, (err, users) => {
-      if (err) {
-        console.error('Error getting attendee emails:', err);
-        return;
-      }
+    for (const user of users) {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: user.email,
+        subject: `Event Invitation: ${eventData.title}`,
+        html: `
+          <h2>You're invited to: ${eventData.title}</h2>
+          <p><strong>Description:</strong> ${eventData.description || 'No description provided'}</p>
+          <p><strong>Date:</strong> ${eventData.date}</p>
+          <p><strong>Time:</strong> ${eventData.time}</p>
+          <p><strong>Location/Link:</strong> ${eventData.location}</p>
+          <br>
+          <p>See you there!</p>
+        `
+      };
       
-      users.forEach(user => {
-        const mailOptions = {
-          from: process.env.EMAIL_USER,
-          to: user.email,
-          subject: `Event Invitation: ${eventData.title}`,
-          html: `
-            <h2>You're invited to: ${eventData.title}</h2>
-            <p><strong>Description:</strong> ${eventData.description || 'No description provided'}</p>
-            <p><strong>Date:</strong> ${eventData.date}</p>
-            <p><strong>Time:</strong> ${eventData.time}</p>
-            <p><strong>Location/Link:</strong> ${eventData.location}</p>
-            <br>
-            <p>See you there!</p>
-          `
-        };
-        
-        transporter.sendMail(mailOptions, (error, info) => {
-          if (error) {
-            console.error('Error sending email to', user.email, ':', error);
-          } else {
-            console.log('Email sent to', user.email, ':', info.response);
-          }
-        });
-      });
-    });
+      await transporter.sendMail(mailOptions);
+      console.log('Email sent to', user.email);
+    }
   } catch (error) {
     console.error('Error in sendEventNotifications:', error);
   }
