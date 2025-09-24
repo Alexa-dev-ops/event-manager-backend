@@ -2,6 +2,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../database');
+const emailService = require('../services/emailService');
 const router = express.Router();
 
 // Middleware to verify token
@@ -27,14 +28,14 @@ router.get('/', auth, async (req, res) => {
     
     const sql = `
       SELECT e.*, u.name as organizer_name, u.email as organizer_email,
-             COUNT(ea.id) as attendee_count
+             COUNT(ea.user_id) as attendee_count
       FROM events e
       LEFT JOIN users u ON e.organizer_id = u.id
       LEFT JOIN event_attendees ea ON e.id = ea.event_id
       WHERE e.organizer_id = ? OR e.id IN (
         SELECT event_id FROM event_attendees WHERE user_id = ?
       )
-      GROUP BY e.id
+      GROUP BY e.id, e.title, e.description, e.date, e.time, e.location, e.organizer_id, e.createdAt, e.updatedAt
       ORDER BY e.date, e.time
     `;
     
@@ -250,6 +251,87 @@ router.delete('/:id', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Delete event error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// NEW: Send email reminders to attendees
+router.post('/:id/send-reminders', auth, async (req, res) => {
+  try {
+    console.log('Sending reminders for event:', req.params.id);
+    
+    // First, verify the user is the organizer
+    const eventSql = `
+      SELECT e.*, u.name as organizer_name, u.email as organizer_email
+      FROM events e
+      LEFT JOIN users u ON e.organizer_id = u.id
+      WHERE e.id = ? AND e.organizer_id = ?
+    `;
+    
+    db.get(eventSql, [req.params.id, req.userId], (err, event) => {
+      if (err) {
+        console.error('Check event organizer error:', err);
+        return res.status(500).json({ message: 'Server error', error: err.message });
+      }
+      if (!event) {
+        return res.status(404).json({ message: 'Event not found or you are not the organizer' });
+      }
+      
+      // Get attendees
+      const attendeesSql = `
+        SELECT u.id, u.name, u.email
+        FROM event_attendees ea
+        JOIN users u ON ea.user_id = u.id
+        WHERE ea.event_id = ?
+      `;
+      
+      db.all(attendeesSql, [req.params.id], async (err, attendees) => {
+        if (err) {
+          console.error('Get attendees error:', err);
+          return res.status(500).json({ message: 'Server error', error: err.message });
+        }
+        
+        if (!attendees || attendees.length === 0) {
+          return res.status(400).json({ message: 'No attendees found for this event' });
+        }
+        
+        try {
+          // Send emails to all attendees
+          const emailPromises = attendees.map(attendee => 
+            emailService.sendEventReminder({
+              to: attendee.email,
+              attendeeName: attendee.name,
+              eventTitle: event.title,
+              eventDate: event.date,
+              eventTime: event.time,
+              eventLocation: event.location,
+              eventDescription: event.description,
+              organizerName: event.organizer_name,
+              organizerEmail: event.organizer_email
+            })
+          );
+          
+          await Promise.all(emailPromises);
+          
+          console.log(`Sent reminders to ${attendees.length} attendees for event ${req.params.id}`);
+          
+          res.json({
+            message: `Email reminders sent successfully to ${attendees.length} attendee${attendees.length === 1 ? '' : 's'}`,
+            sentTo: attendees.length,
+            attendees: attendees.map(a => ({ name: a.name, email: a.email }))
+          });
+          
+        } catch (emailError) {
+          console.error('Email sending error:', emailError);
+          res.status(500).json({ 
+            message: 'Failed to send email reminders', 
+            error: emailError.message 
+          });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Send reminders error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
