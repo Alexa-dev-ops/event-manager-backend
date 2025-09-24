@@ -1,21 +1,44 @@
-// services/emailService.js - CREATE THIS NEW FILE
+// services/emailService.js - REPLACE YOUR EXISTING FILE
 const nodemailer = require('nodemailer');
 
-
+// Configure email transporter with Resend support
 const createTransport = () => {
-  if (process.env.EMAIL_SERVICE === 'gmail') {
+  const config = {
+    // Add timeout settings
+    connectionTimeout: 60000, // 60 seconds
+    greetingTimeout: 30000,   // 30 seconds
+    socketTimeout: 60000,     // 60 seconds
+  };
+
+  if (process.env.EMAIL_SERVICE === 'resend') {
+    // Resend configuration (recommended for production)
+    return nodemailer.createTransport({
+      ...config,
+      host: 'smtp.resend.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: 'resend',
+        pass: process.env.RESEND_API_KEY
+      }
+    });
+  } else if (process.env.EMAIL_SERVICE === 'gmail') {
     // Gmail configuration
     return nodemailer.createTransport({
+      ...config,
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER, // 
-        pass: process.env.EMAIL_APP_PASSWORD // 
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_APP_PASSWORD
       }
     });
   } else if (process.env.EMAIL_SERVICE === 'sendgrid') {
     // SendGrid configuration
     return nodemailer.createTransport({
-      service: 'SendGrid',
+      ...config,
+      host: 'smtp.sendgrid.net',
+      port: 587,
+      secure: false,
       auth: {
         user: 'apikey',
         pass: process.env.SENDGRID_API_KEY
@@ -24,12 +47,17 @@ const createTransport = () => {
   } else {
     // Generic SMTP configuration
     return nodemailer.createTransport({
+      ...config,
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // true for 465, false for other ports
+      port: parseInt(process.env.SMTP_PORT) || 587,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
+      },
+      tls: {
+        ciphers: 'SSLv3',
+        rejectUnauthorized: false
       }
     });
   }
@@ -136,11 +164,6 @@ const generateEventReminderHTML = (eventData) => {
           align-items: center;
           gap: 10px;
         }
-        .detail-icon {
-          width: 20px;
-          height: 20px;
-          flex-shrink: 0;
-        }
         .detail-text {
           font-size: 14px;
           color: #666;
@@ -160,16 +183,6 @@ const generateEventReminderHTML = (eventData) => {
           color: #666;
           border-top: 1px solid #eee;
         }
-        .btn {
-          display: inline-block;
-          padding: 12px 24px;
-          background: #667eea;
-          color: white;
-          text-decoration: none;
-          border-radius: 4px;
-          margin: 15px 0;
-          font-weight: 500;
-        }
         .organizer-info {
           background: #fff;
           border: 1px solid #eee;
@@ -182,7 +195,7 @@ const generateEventReminderHTML = (eventData) => {
     <body>
       <div class="container">
         <div class="header">
-          <h1>📅 Event Reminder</h1>
+          <h1>Event Reminder</h1>
           <p>Don't forget about your upcoming event!</p>
         </div>
         
@@ -196,17 +209,14 @@ const generateEventReminderHTML = (eventData) => {
             
             <div class="event-details">
               <div class="detail-row">
-                <span class="detail-icon">📅</span>
                 <span class="detail-text"><strong>Date:</strong> ${formatDate(eventDate)}</span>
               </div>
               
               <div class="detail-row">
-                <span class="detail-icon">🕒</span>
                 <span class="detail-text"><strong>Time:</strong> ${formatTime(eventTime)}</span>
               </div>
               
               <div class="detail-row">
-                <span class="detail-icon">📍</span>
                 <span class="detail-text"><strong>Location:</strong> ${eventLocation}</span>
               </div>
             </div>
@@ -238,18 +248,26 @@ const generateEventReminderHTML = (eventData) => {
 };
 
 const emailService = {
-  // Send event reminder email
-  sendEventReminder: async (eventData) => {
-    try {
-      const transporter = createTransport();
-      
-      const mailOptions = {
-        from: `"Event Manager" <${process.env.EMAIL_USER}>`,
-        to: eventData.to,
-        subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
-        html: generateEventReminderHTML(eventData),
-        // Also include plain text version
-        text: `
+  // Send event reminder email with retry logic
+  sendEventReminder: async (eventData, maxRetries = 3) => {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Email attempt ${attempt} for ${eventData.to}`);
+        
+        const transporter = createTransport();
+        
+        // Test the connection first
+        await transporter.verify();
+        console.log('SMTP connection verified');
+        
+        const mailOptions = {
+          from: `"Event Manager" <${process.env.EMAIL_USER || 'noreply@resend.dev'}>`,
+          to: eventData.to,
+          subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
+          html: generateEventReminderHTML(eventData),
+          text: `
 Hi ${eventData.attendeeName},
 
 This is a reminder about the upcoming event you're invited to:
@@ -267,34 +285,45 @@ We look forward to seeing you there!
 
 --
 Event Manager
-        `
-      };
-      
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`Email sent successfully to ${eventData.to}:`, info.messageId);
-      
-      return {
-        success: true,
-        messageId: info.messageId,
-        recipient: eventData.to
-      };
-      
-    } catch (error) {
-      console.error('Email sending failed:', error);
-      throw new Error(`Failed to send email to ${eventData.to}: ${error.message}`);
+          `
+        };
+        
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`Email sent successfully to ${eventData.to}:`, info.messageId);
+        
+        return {
+          success: true,
+          messageId: info.messageId,
+          recipient: eventData.to
+        };
+        
+      } catch (error) {
+        console.error(`Email attempt ${attempt} failed:`, error.message);
+        lastError = error;
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+          console.log(`Retrying in ${delay/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+    
+    throw new Error(`Failed to send email to ${eventData.to} after ${maxRetries} attempts: ${lastError.message}`);
   },
 
   // Test email configuration
   testEmailConfig: async () => {
     try {
+      console.log('Testing email configuration...');
       const transporter = createTransport();
       await transporter.verify();
       console.log('Email configuration is valid');
-      return true;
+      return { success: true, message: 'Email configuration is valid' };
     } catch (error) {
       console.error('Email configuration error:', error);
-      return false;
+      return { success: false, error: error.message };
     }
   }
 };
