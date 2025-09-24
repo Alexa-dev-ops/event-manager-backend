@@ -1,41 +1,37 @@
-// services/emailService.js - REPLACE YOUR EXISTING FILE
-const nodemailer = require("nodemailer");
+// services/emailService.js
+const SibApiV3Sdk = require('sib-api-v3-sdk');
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_SECURE === "true", // false for 587, true for 465
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const client = SibApiV3Sdk.ApiClient.instance;
+const apiKeyAuth = client.authentications['api-key'];
+apiKeyAuth.apiKey = process.env.BREVO_API_KEY || '';
+
+const transactionalEmailsApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 const formatDate = (dateStr) => {
   try {
     const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
-  } catch (error) {
+  } catch {
     return dateStr;
   }
 };
 
 const formatTime = (timeStr) => {
   try {
-    const [hours, minutes] = timeStr.split(":");
+    const [hours, minutes] = timeStr.split(':');
     const date = new Date();
     date.setHours(parseInt(hours), parseInt(minutes));
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
-  } catch (error) {
+  } catch {
     return timeStr;
   }
 };
@@ -49,15 +45,15 @@ const generateEventReminderHTML = (eventData) => {
     eventLocation,
     eventDescription,
     organizerName,
-    organizerEmail,
+    organizerEmail
   } = eventData;
 
   return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Event Reminder</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
@@ -66,7 +62,7 @@ const generateEventReminderHTML = (eventData) => {
         .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
         .content { padding: 30px; }
         .event-card { background: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 4px; }
-        .event-title { font-size: 20px; font-weight: 600; color: #333; margin: 0 0 15px 0; }
+        .event-title { font-size: 20px; font-weight: 600; margin: 0 0 15px 0; }
         .event-details { display: grid; gap: 10px; }
         .detail-row { display: flex; align-items: center; gap: 10px; }
         .detail-text { font-size: 14px; color: #666; }
@@ -91,7 +87,7 @@ const generateEventReminderHTML = (eventData) => {
               <div class="detail-row"><span class="detail-text"><strong>Time:</strong> ${formatTime(eventTime)}</span></div>
               <div class="detail-row"><span class="detail-text"><strong>Location:</strong> ${eventLocation}</span></div>
             </div>
-            ${eventDescription ? `<div class="description"><strong>Description:</strong><br>${eventDescription}</div>` : ""}
+            ${eventDescription ? `<div class="description"><strong>Description:</strong><br>${eventDescription}</div>` : ''}
           </div>
           <div class="organizer-info">
             <strong>Organized by:</strong> ${organizerName}<br>
@@ -109,19 +105,7 @@ const generateEventReminderHTML = (eventData) => {
   `;
 };
 
-const emailService = {
-  sendEventReminder: async (eventData, maxRetries = 3) => {
-    let lastError;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`Email attempt ${attempt} for ${eventData.to}`);
-
-        const info = await transporter.sendMail({
-          from: process.env.EMAIL_FROM || `"Event Manager" <${process.env.SMTP_USER}>`,
-          to: eventData.to,
-          subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
-          html: generateEventReminderHTML(eventData),
-          text: `
+const buildTextContent = (eventData) => `
 Hi ${eventData.attendeeName},
 
 This is a reminder about the upcoming event you're invited to:
@@ -131,31 +115,53 @@ Date: ${formatDate(eventData.eventDate)}
 Time: ${formatTime(eventData.eventTime)}
 Location: ${eventData.eventLocation}
 
-${eventData.eventDescription ? `Description: ${eventData.eventDescription}` : ""}
+${eventData.eventDescription ? `Description: ${eventData.eventDescription}` : ''}
 
 Organized by: ${eventData.organizerName} (${eventData.organizerEmail})
 
-We look forward to seeing you there!
-
 --
 Event Manager
-          `,
-        });
+`;
 
-        console.log(`Email sent successfully to ${eventData.to}:`, info.messageId);
-        return { success: true, messageId: info.messageId, recipient: eventData.to };
-      } catch (error) {
-        console.error(`Email attempt ${attempt} failed:`, error.message);
-        lastError = error;
+const emailService = {
+  sendEventReminder: async (eventData, maxRetries = 3) => {
+    let lastError;
+    const sender = {
+      name: process.env.EMAIL_FROM_NAME || 'Event Manager', // can be your Gmail as name
+      email: process.env.EMAIL_FROM_ADDRESS || process.env.BREVO_SENDER || '' // must be Brevo verified sender
+    };
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Email attempt ${attempt} for ${eventData.to}`);
+
+        const sendSmtpEmail = {
+          sender,
+          to: [{ email: eventData.to, name: eventData.attendeeName || '' }],
+          subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
+          htmlContent: generateEventReminderHTML(eventData),
+          textContent: buildTextContent(eventData)
+        };
+
+        const response = await transactionalEmailsApi.sendTransacEmail(sendSmtpEmail);
+
+        console.log(`Email sent successfully to ${eventData.to}:`, response?.messageId || response);
+        return { success: true, messageId: response?.messageId || null, recipient: eventData.to };
+      } catch (err) {
+        const errMsg = err?.message || JSON.stringify(err);
+        console.error(`Email attempt ${attempt} failed:`, errMsg);
+        lastError = err;
+
         if (attempt < maxRetries) {
           const delay = Math.pow(2, attempt) * 1000;
           console.log(`Retrying in ${delay / 1000} seconds...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
-    throw new Error(`Failed to send email to ${eventData.to} after ${maxRetries} attempts: ${lastError.message}`);
-  },
+
+    throw new Error(`Failed to send email to ${eventData.to} after ${maxRetries} attempts: ${lastError?.message || String(lastError)}`);
+  }
 };
 
 module.exports = emailService;
