@@ -1,67 +1,6 @@
 // services/emailService.js - REPLACE YOUR EXISTING FILE
-const nodemailer = require('nodemailer');
-
-// Configure email transporter with Resend support
-const createTransport = () => {
-  const config = {
-    // Add timeout settings
-    connectionTimeout: 60000, // 60 seconds
-    greetingTimeout: 30000,   // 30 seconds
-    socketTimeout: 60000,     // 60 seconds
-  };
-
-  if (process.env.EMAIL_SERVICE === 'resend') {
-    // Resend configuration (recommended for production)
-    return nodemailer.createTransport({
-      ...config,
-      host: 'smtp.resend.com',
-      port: 587,
-      secure: false,
-      auth: {
-        user: 'resend',
-        pass: process.env.RESEND_API_KEY
-      }
-    });
-  } else if (process.env.EMAIL_SERVICE === 'gmail') {
-    // Gmail configuration
-    return nodemailer.createTransport({
-      ...config,
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD
-      }
-    });
-  } else if (process.env.EMAIL_SERVICE === 'sendgrid') {
-    // SendGrid configuration
-    return nodemailer.createTransport({
-      ...config,
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      secure: false,
-      auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
-      }
-    });
-  } else {
-    // Generic SMTP configuration
-    return nodemailer.createTransport({
-      ...config,
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD
-      },
-      tls: {
-        ciphers: 'SSLv3',
-        rejectUnauthorized: false
-      }
-    });
-  }
-};
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const formatDate = (dateStr) => {
   try {
@@ -112,84 +51,19 @@ const generateEventReminderHTML = (eventData) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Event Reminder</title>
       <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          margin: 0;
-          padding: 0;
-          background-color: #f5f5f5;
-        }
-        .container {
-          max-width: 600px;
-          margin: 20px auto;
-          background: white;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          overflow: hidden;
-        }
-        .header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px;
-        }
-        .event-card {
-          background: #f8f9ff;
-          border-left: 4px solid #667eea;
-          padding: 20px;
-          margin: 20px 0;
-          border-radius: 4px;
-        }
-        .event-title {
-          font-size: 20px;
-          font-weight: 600;
-          color: #333;
-          margin: 0 0 15px 0;
-        }
-        .event-details {
-          display: grid;
-          gap: 10px;
-        }
-        .detail-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .detail-text {
-          font-size: 14px;
-          color: #666;
-        }
-        .description {
-          margin: 20px 0;
-          padding: 15px;
-          background: #fff;
-          border-radius: 4px;
-          border: 1px solid #eee;
-        }
-        .footer {
-          background: #f8f9fa;
-          padding: 20px;
-          text-align: center;
-          font-size: 14px;
-          color: #666;
-          border-top: 1px solid #eee;
-        }
-        .organizer-info {
-          background: #fff;
-          border: 1px solid #eee;
-          border-radius: 4px;
-          padding: 15px;
-          margin: 20px 0;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 30px; }
+        .event-card { background: #f8f9ff; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .event-title { font-size: 20px; font-weight: 600; color: #333; margin: 0 0 15px 0; }
+        .event-details { display: grid; gap: 10px; }
+        .detail-row { display: flex; align-items: center; gap: 10px; }
+        .detail-text { font-size: 14px; color: #666; }
+        .description { margin: 20px 0; padding: 15px; background: #fff; border-radius: 4px; border: 1px solid #eee; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 14px; color: #666; border-top: 1px solid #eee; }
+        .organizer-info { background: #fff; border: 1px solid #eee; border-radius: 4px; padding: 15px; margin: 20px 0; }
       </style>
     </head>
     <body>
@@ -198,45 +72,24 @@ const generateEventReminderHTML = (eventData) => {
           <h1>Event Reminder</h1>
           <p>Don't forget about your upcoming event!</p>
         </div>
-        
         <div class="content">
           <p>Hi <strong>${attendeeName}</strong>,</p>
-          
           <p>This is a friendly reminder about the upcoming event you're invited to:</p>
-          
           <div class="event-card">
             <div class="event-title">${eventTitle}</div>
-            
             <div class="event-details">
-              <div class="detail-row">
-                <span class="detail-text"><strong>Date:</strong> ${formatDate(eventDate)}</span>
-              </div>
-              
-              <div class="detail-row">
-                <span class="detail-text"><strong>Time:</strong> ${formatTime(eventTime)}</span>
-              </div>
-              
-              <div class="detail-row">
-                <span class="detail-text"><strong>Location:</strong> ${eventLocation}</span>
-              </div>
+              <div class="detail-row"><span class="detail-text"><strong>Date:</strong> ${formatDate(eventDate)}</span></div>
+              <div class="detail-row"><span class="detail-text"><strong>Time:</strong> ${formatTime(eventTime)}</span></div>
+              <div class="detail-row"><span class="detail-text"><strong>Location:</strong> ${eventLocation}</span></div>
             </div>
-            
-            ${eventDescription ? `
-            <div class="description">
-              <strong>Description:</strong><br>
-              ${eventDescription}
-            </div>
-            ` : ''}
+            ${eventDescription ? `<div class="description"><strong>Description:</strong><br>${eventDescription}</div>` : ''}
           </div>
-          
           <div class="organizer-info">
             <strong>Organized by:</strong> ${organizerName}<br>
             <strong>Contact:</strong> <a href="mailto:${organizerEmail}">${organizerEmail}</a>
           </div>
-          
           <p>We look forward to seeing you there!</p>
         </div>
-        
         <div class="footer">
           <p>This email was sent automatically by Event Manager.</p>
           <p>If you have any questions, please contact the event organizer.</p>
@@ -248,22 +101,14 @@ const generateEventReminderHTML = (eventData) => {
 };
 
 const emailService = {
-  // Send event reminder email with retry logic
   sendEventReminder: async (eventData, maxRetries = 3) => {
     let lastError;
-    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`Email attempt ${attempt} for ${eventData.to}`);
-        
-        const transporter = createTransport();
-        
-        // Test the connection first
-        await transporter.verify();
-        console.log('SMTP connection verified');
-        
-        const mailOptions = {
-          from: `"Event Manager" <${process.env.EMAIL_USER || 'noreply@resend.dev'}>`,
+
+        const { data, error } = await resend.emails.send({
+          from: process.env.EMAIL_FROM || 'noreply@resend.dev',
           to: eventData.to,
           subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
           html: generateEventReminderHTML(eventData),
@@ -286,45 +131,23 @@ We look forward to seeing you there!
 --
 Event Manager
           `
-        };
-        
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`Email sent successfully to ${eventData.to}:`, info.messageId);
-        
-        return {
-          success: true,
-          messageId: info.messageId,
-          recipient: eventData.to
-        };
-        
+        });
+
+        if (error) throw new Error(error.message);
+        console.log(`Email sent successfully to ${eventData.to}:`, data.id);
+
+        return { success: true, messageId: data.id, recipient: eventData.to };
       } catch (error) {
         console.error(`Email attempt ${attempt} failed:`, error.message);
         lastError = error;
-        
-        // Wait before retry (exponential backoff)
         if (attempt < maxRetries) {
-          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-          console.log(`Retrying in ${delay/1000} seconds...`);
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Retrying in ${delay / 1000} seconds...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
-    
     throw new Error(`Failed to send email to ${eventData.to} after ${maxRetries} attempts: ${lastError.message}`);
-  },
-
-  // Test email configuration
-  testEmailConfig: async () => {
-    try {
-      console.log('Testing email configuration...');
-      const transporter = createTransport();
-      await transporter.verify();
-      console.log('Email configuration is valid');
-      return { success: true, message: 'Email configuration is valid' };
-    } catch (error) {
-      console.error('Email configuration error:', error);
-      return { success: false, error: error.message };
-    }
   }
 };
 
