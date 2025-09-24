@@ -1,15 +1,24 @@
 // services/emailService.js - REPLACE YOUR EXISTING FILE
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_SECURE === "true", // false for 587, true for 465
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 const formatDate = (dateStr) => {
   try {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   } catch (error) {
     return dateStr;
@@ -18,13 +27,13 @@ const formatDate = (dateStr) => {
 
 const formatTime = (timeStr) => {
   try {
-    const [hours, minutes] = timeStr.split(':');
+    const [hours, minutes] = timeStr.split(":");
     const date = new Date();
     date.setHours(parseInt(hours), parseInt(minutes));
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
     });
   } catch (error) {
     return timeStr;
@@ -40,7 +49,7 @@ const generateEventReminderHTML = (eventData) => {
     eventLocation,
     eventDescription,
     organizerName,
-    organizerEmail
+    organizerEmail,
   } = eventData;
 
   return `
@@ -82,7 +91,7 @@ const generateEventReminderHTML = (eventData) => {
               <div class="detail-row"><span class="detail-text"><strong>Time:</strong> ${formatTime(eventTime)}</span></div>
               <div class="detail-row"><span class="detail-text"><strong>Location:</strong> ${eventLocation}</span></div>
             </div>
-            ${eventDescription ? `<div class="description"><strong>Description:</strong><br>${eventDescription}</div>` : ''}
+            ${eventDescription ? `<div class="description"><strong>Description:</strong><br>${eventDescription}</div>` : ""}
           </div>
           <div class="organizer-info">
             <strong>Organized by:</strong> ${organizerName}<br>
@@ -107,8 +116,8 @@ const emailService = {
       try {
         console.log(`Email attempt ${attempt} for ${eventData.to}`);
 
-        const { data, error } = await resend.emails.send({
-          from: process.env.EMAIL_FROM || 'noreply@resend.dev',
+        const info = await transporter.sendMail({
+          from: process.env.EMAIL_FROM || `"Event Manager" <${process.env.SMTP_USER}>`,
           to: eventData.to,
           subject: `Reminder: ${eventData.eventTitle} - ${formatDate(eventData.eventDate)}`,
           html: generateEventReminderHTML(eventData),
@@ -122,7 +131,7 @@ Date: ${formatDate(eventData.eventDate)}
 Time: ${formatTime(eventData.eventTime)}
 Location: ${eventData.eventLocation}
 
-${eventData.eventDescription ? `Description: ${eventData.eventDescription}` : ''}
+${eventData.eventDescription ? `Description: ${eventData.eventDescription}` : ""}
 
 Organized by: ${eventData.organizerName} (${eventData.organizerEmail})
 
@@ -130,25 +139,23 @@ We look forward to seeing you there!
 
 --
 Event Manager
-          `
+          `,
         });
 
-        if (error) throw new Error(error.message);
-        console.log(`Email sent successfully to ${eventData.to}:`, data.id);
-
-        return { success: true, messageId: data.id, recipient: eventData.to };
+        console.log(`Email sent successfully to ${eventData.to}:`, info.messageId);
+        return { success: true, messageId: info.messageId, recipient: eventData.to };
       } catch (error) {
         console.error(`Email attempt ${attempt} failed:`, error.message);
         lastError = error;
         if (attempt < maxRetries) {
           const delay = Math.pow(2, attempt) * 1000;
           console.log(`Retrying in ${delay / 1000} seconds...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
     throw new Error(`Failed to send email to ${eventData.to} after ${maxRetries} attempts: ${lastError.message}`);
-  }
+  },
 };
 
 module.exports = emailService;
