@@ -2,10 +2,10 @@
 const nodemailer = require('nodemailer');
 
 
-const createTransporter = () => {
+const createTransport = () => {
   if (process.env.EMAIL_SERVICE === 'gmail') {
     // Gmail configuration
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER, // 
@@ -14,7 +14,7 @@ const createTransporter = () => {
     });
   } else if (process.env.EMAIL_SERVICE === 'sendgrid') {
     // SendGrid configuration
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       service: 'SendGrid',
       auth: {
         user: 'apikey',
